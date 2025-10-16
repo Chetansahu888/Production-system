@@ -17,6 +17,7 @@ interface MachinePerformance {
   averageEfficiency: number
   status: 'excellent' | 'good' | 'poor'
   lastUpdate: string
+  firmName: string
 }
 
 interface Record {
@@ -34,9 +35,15 @@ interface Record {
   remarks: string
   dateTime: string
   timestamp: string
+  firmName: string
 }
 
-export default function Dashboard() {
+interface DashboardProps {
+  userFirmName: string
+  isAdmin: boolean
+}
+
+export default function Dashboard({ userFirmName, isAdmin }: DashboardProps) {
   const [stats, setStats] = useState<DashboardStats>({
     total: 0,
     excellent: 0,
@@ -80,9 +87,10 @@ export default function Dashboard() {
   const loadDashboardData = async () => {
     try {
       setLoading(true)
-      console.log('🔄 Loading dashboard data...')
+      console.log('🔄 Loading dashboard data for:', isAdmin ? 'Admin (All data)' : `Firm: ${userFirmName}`)
 
-      const response = await fetch('/api/sheets/dashboard', {
+      // Use the records endpoint since dashboard might not exist
+      const response = await fetch('/api/sheets/records', {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -97,7 +105,19 @@ export default function Dashboard() {
       const result = await response.json()
 
       if (result.success && result.data) {
-        const records: Record[] = result.data
+        let records: Record[] = result.data
+        console.log('📊 Total records fetched:', records.length)
+
+        // Filter by firm name ONLY if user is not admin
+        if (!isAdmin && userFirmName && userFirmName !== 'All') {
+          const originalCount = records.length
+          records = records.filter((record: Record) => {
+            const recordFirm = record.firmName?.toString().trim()
+            const userFirm = userFirmName.toString().trim()
+            return recordFirm === userFirm
+          })
+          console.log(`🔍 Filtered ${records.length} records from ${originalCount} for firm: ${userFirmName}`)
+        }
         
         // Calculate overall stats
         let excellent = 0, good = 0, poor = 0
@@ -108,7 +128,7 @@ export default function Dashboard() {
         const todayRecords = records.filter(record => record.dateTime === today).length
 
         // Machine performance tracking
-        const machineStats: { [key: string]: { records: Record[], efficiencies: number[] } } = {}
+        const machineStats: { [key: string]: { records: Record[], efficiencies: number[], firmName: string } } = {}
 
         records.forEach((record: Record) => {
           const efficiency = calculateEfficiency(record)
@@ -124,7 +144,11 @@ export default function Dashboard() {
 
             // Track by machine
             if (!machineStats[record.machineName]) {
-              machineStats[record.machineName] = { records: [], efficiencies: [] }
+              machineStats[record.machineName] = { 
+                records: [], 
+                efficiencies: [], 
+                firmName: record.firmName || 'Unknown' 
+              }
             }
             machineStats[record.machineName].records.push(record)
             machineStats[record.machineName].efficiencies.push(efficiency)
@@ -141,7 +165,8 @@ export default function Dashboard() {
             totalRecords: data.records.length,
             averageEfficiency: Math.round(avgEfficiency),
             status: getPerformanceStatus(avgEfficiency),
-            lastUpdate: latestRecord.dateTime
+            lastUpdate: latestRecord.dateTime,
+            firmName: data.firmName
           }
         }).sort((a, b) => b.averageEfficiency - a.averageEfficiency)
 
@@ -159,7 +184,7 @@ export default function Dashboard() {
         
         setAlert({ 
           type: "success", 
-          message: `✅ Dashboard updated successfully! Loaded ${records.length} records.` 
+          message: `✅ Dashboard updated! Loaded ${records.length} records${!isAdmin ? ` for ${userFirmName}` : ''}.` 
         })
         setTimeout(() => setAlert(null), 3000)
 
@@ -191,8 +216,10 @@ export default function Dashboard() {
   }
 
   useEffect(() => {
-    loadDashboardData()
-  }, [])
+    if (userFirmName) {
+      loadDashboardData()
+    }
+  }, [userFirmName, isAdmin])
 
   if (loading) {
     return (
@@ -200,7 +227,9 @@ export default function Dashboard() {
         <div className="flex items-center justify-center h-64">
           <div className="text-center">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-            <p className="text-gray-600">Loading dashboard data from Google Sheets...</p>
+            <p className="text-gray-600">
+              Loading dashboard data{!isAdmin ? ` for ${userFirmName}` : ' (All)'}...
+            </p>
           </div>
         </div>
       </div>
@@ -213,10 +242,14 @@ export default function Dashboard() {
       <div className="bg-gradient-to-r from-blue-600 to-blue-500 text-white p-8 rounded-xl shadow-lg mb-8">
         <div className="flex justify-between items-center">
           <div>
-            <h1 className="text-3xl font-bold mb-2">Production Dashboard</h1>
-            <p className="text-blue-100">Real-time overview of production performance</p>
+            <h1 className="text-3xl font-bold mb-2">
+              Machine Efficiency FMS
+            </h1>
+            <p className="text-blue-100">
+              {isAdmin ? 'Real-time overview of all production performance' : 'Real-time overview of your production performance'}
+            </p>
           </div>
-          <div className="text-right">
+          {/* <div className="text-right">
             <button
               onClick={loadDashboardData}
               className="px-6 py-2 bg-white bg-opacity-20 text-white rounded-lg hover:bg-opacity-30 transition-colors"
@@ -227,7 +260,7 @@ export default function Dashboard() {
             {lastRefresh && (
               <p className="text-blue-200 text-sm mt-2">Last updated: {lastRefresh}</p>
             )}
-          </div>
+          </div> */}
         </div>
       </div>
 
@@ -280,14 +313,19 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
         {/* Machine Performance */}
         <div className="bg-white rounded-xl shadow-md p-6">
-          <h2 className="text-xl font-bold text-gray-800 mb-4">Machine Performance</h2>
+          <h2 className="text-xl font-bold text-gray-800 mb-4">
+            Machine Performance{!isAdmin ? ` - ${userFirmName}` : ' (All Firms)'}
+          </h2>
           {machinePerformance.length > 0 ? (
-            <div className="space-y-4">
+            <div className="space-y-4 max-h-96 overflow-y-auto">
               {machinePerformance.map((machine, index) => (
                 <div key={index} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
                   <div>
                     <h3 className="font-semibold text-gray-800">{machine.machineName}</h3>
-                    <p className="text-sm text-gray-600">{machine.totalRecords} records • Last: {machine.lastUpdate}</p>
+                    <p className="text-sm text-gray-600">
+                      {isAdmin && <span className="text-blue-600 font-medium">{machine.firmName} • </span>}
+                      {machine.totalRecords} records • Last: {machine.lastUpdate}
+                    </p>
                   </div>
                   <div className="text-right">
                     <div className="text-2xl font-bold text-gray-800">{machine.averageEfficiency}%</div>
@@ -311,7 +349,7 @@ export default function Dashboard() {
               <svg className="w-16 h-16 mx-auto mb-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
               </svg>
-              <p>No machine performance data available</p>
+              <p>No machine performance data available{!isAdmin ? ` for ${userFirmName}` : ''}</p>
             </div>
           )}
         </div>
@@ -333,23 +371,17 @@ export default function Dashboard() {
               <p className="text-sm text-red-600">Efficiency &lt; 80% of Optimum Target</p>
             </div>
           </div>
-          
-          {/* <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-            <h3 className="font-semibold text-blue-800 mb-2">📊 Calculation Method</h3>
-            <p className="text-sm text-blue-700">
-              Efficiency = Average of (Actual Working Time / Optimum Working Time, 
-              Actual Output / Optimum Output, Actual Total Output / Optimum Total Quantity) × 100%
-            </p>
-          </div> */}
         </div>
       </div>
 
       {/* Data Source Info */}
-      <div className="bg-gradient-to-r from-gray-50 to-gray-100 rounded-xl p-6 border border-gray-200">
+      {/* <div className="bg-gradient-to-r from-gray-50 to-gray-100 rounded-xl p-6 border border-gray-200">
         <div className="flex items-center justify-between">
           <div>
             <h3 className="text-lg font-semibold text-gray-800">📊 Data Source</h3>
-            <p className="text-gray-600">Live data from Google Sheets Records sheet</p>
+            <p className="text-gray-600">
+              Live data from Google Sheets Records{!isAdmin ? ` filtered for ${userFirmName}` : ' (All firms)'}
+            </p>
           </div>
           <div className="text-right">
             <div className="text-sm text-gray-500">Connected to Google Sheets</div>
@@ -359,7 +391,7 @@ export default function Dashboard() {
             </div>
           </div>
         </div>
-      </div>
+      </div> */}
     </div>
   )
 }

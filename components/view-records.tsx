@@ -17,6 +17,7 @@ interface Record {
   remarks: string
   dateTime: string
   timestamp: string
+  firmName: string
 }
 
 interface AlertState {
@@ -24,25 +25,58 @@ interface AlertState {
   message: string
 }
 
-export default function ViewRecords(): JSX.Element {
+interface ViewRecordsProps {
+  userFirmName: string
+  isAdmin: boolean
+}
+
+export default function ViewRecords({ userFirmName, isAdmin }: ViewRecordsProps): JSX.Element {
   const [records, setRecords] = useState<Record[]>([])
   const [filteredRecords, setFilteredRecords] = useState<Record[]>([])
   const [searchTerm, setSearchTerm] = useState<string>("")
-  const [startDate, setStartDate] = useState<string>("")
-  const [endDate, setEndDate] = useState<string>("")
+  const [filterDate, setFilterDate] = useState<string>("")
   const [loading, setLoading] = useState<boolean>(false)
   const [alert, setAlert] = useState<AlertState | null>(null)
 
   useEffect(() => {
     loadRecords()
-  }, [])
+  }, [userFirmName, isAdmin])
+
+  useEffect(() => {
+    // Live filter as search date or searchTerm changes
+    let filtered = [...records]
+    
+    if (searchTerm) {
+      const searchLower = searchTerm.toLowerCase().trim()
+      filtered = filtered.filter((r) =>
+        (r.machineName?.toLowerCase().includes(searchLower) ||
+        r.material?.toLowerCase().includes(searchLower) ||
+        r.specifications?.toLowerCase().includes(searchLower) ||
+        r.remarks?.toLowerCase().includes(searchLower) ||
+        r.firmName?.toLowerCase().includes(searchLower))
+      )
+    }
+    
+    if (filterDate) {
+      filtered = filtered.filter((r) => {
+        if (!r.dateTime) return false
+        const recordDate = new Date(r.dateTime)
+        const filterDateObj = new Date(filterDate)
+        
+        if (isNaN(recordDate.getTime()) || isNaN(filterDateObj.getTime())) {
+          return r.dateTime.includes(filterDate)
+        }
+        
+        return recordDate.toISOString().split('T')[0] === filterDateObj.toISOString().split('T')[0]
+      })
+    }
+    
+    setFilteredRecords(filtered)
+  }, [searchTerm, filterDate, records])
 
   const loadRecords = async (): Promise<void> => {
     try {
       setLoading(true)
-      console.log('Loading records from Google Sheets via API...')
-
-      // Using your folder structure: /api/sheets/records
       const response = await fetch('/api/sheets/records', {
         method: 'GET',
         headers: {
@@ -51,33 +85,35 @@ export default function ViewRecords(): JSX.Element {
         cache: 'no-store'
       })
 
-      console.log('API Response status:', response.status)
-
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: Failed to fetch records`)
       }
-
       const data = await response.json()
-      console.log('API Response data:', data)
-
       if (data.success) {
-        setRecords(data.data || [])
-        setFilteredRecords(data.data || [])
+        let recordsData = data.data || []
+        if (!isAdmin && userFirmName && userFirmName !== 'All') {
+          recordsData = recordsData.filter((record: Record) => {
+            const recordFirm = record.firmName?.toString().trim()
+            const userFirm = userFirmName.toString().trim()
+            return recordFirm === userFirm
+          })
+        }
+        setRecords(recordsData)
+        setFilteredRecords(recordsData)
         setAlert({ 
           type: "success", 
-          message: `Successfully loaded ${data.count || 0} records from Google Sheets!` 
+          message: `✅ Successfully loaded ${recordsData.length} records${!isAdmin ? ` for ${userFirmName}` : ''}!` 
         })
-        setTimeout(() => setAlert(null), 3000)
+        setTimeout(() => setAlert(null), 2000)
       } else {
         throw new Error(data.error || 'Failed to load records')
       }
     } catch (error) {
-      console.error('Error loading records:', error)
       setAlert({ 
         type: "error", 
-        message: `Failed to load records: ${error instanceof Error ? error.message : 'Unknown error'}` 
+        message: `❌ Failed to load records: ${error instanceof Error ? error.message : 'Unknown error'}` 
       })
-      setTimeout(() => setAlert(null), 5000)
+      setTimeout(() => setAlert(null), 3500)
       setRecords([])
       setFilteredRecords([])
     } finally {
@@ -85,70 +121,38 @@ export default function ViewRecords(): JSX.Element {
     }
   }
 
-  const filterRecords = (): void => {
-    let filtered = [...records]
-
-    if (searchTerm) {
-      const searchLower = searchTerm.toLowerCase()
-      filtered = filtered.filter((r) =>
-        r.machineName.toLowerCase().includes(searchLower) ||
-        r.material.toLowerCase().includes(searchLower) ||
-        r.specifications.toLowerCase().includes(searchLower) ||
-        r.remarks.toLowerCase().includes(searchLower)
-      )
-    }
-
-    if (startDate && endDate) {
-      filtered = filtered.filter((r) => r.dateTime >= startDate && r.dateTime <= endDate)
-    } else if (startDate) {
-      filtered = filtered.filter((r) => r.dateTime >= startDate)
-    } else if (endDate) {
-      filtered = filtered.filter((r) => r.dateTime <= endDate)
-    }
-
-    setFilteredRecords(filtered)
-  }
-
   const clearFilters = (): void => {
     setSearchTerm("")
-    setStartDate("")
-    setEndDate("")
+    setFilterDate("")
     setFilteredRecords(records)
   }
+
   const formatDateToDDMMYY = (dateString: string): string => {
-  if (!dateString) return ''
-  
-  const date = new Date(dateString)
-  if (isNaN(date.getTime())) return dateString // Return original if invalid date
-  
-  const day = String(date.getDate()).padStart(2, '0')
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const year = String(date.getFullYear()).slice(-2) // Get last 2 digits of year
-  
-  return `${day}/${month}/${year}`
-}
-
-
-  const getPerformanceClass = (actual: number, optimum: number): string => {
-    if (optimum === 0) return "bg-gray-100 text-gray-800"
-    const percentage = (actual / optimum) * 100
-    if (percentage >= 95) return "bg-green-100 text-green-800"
-    if (percentage >= 80) return "bg-yellow-100 text-yellow-800"
-    return "bg-red-100 text-red-800"
+    if (!dateString) return ''
+    const date = new Date(dateString)
+    if (isNaN(date.getTime())) return dateString
+    const day = String(date.getDate()).padStart(2, '0')
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const year = String(date.getFullYear()).slice(-2)
+    return `${day}/${month}/${year}`
   }
 
-  const calculatePercentage = (actual: number, optimum: number): number => {
-    if (optimum === 0) return 0
-    return Math.round((actual / optimum) * 100)
+  const getWorkingTimePerformanceClass = (actualTime: number, optimumTime: number): string => {
+    if (actualTime > optimumTime) {
+      return "bg-red-100 text-red-800 border-l-4 border-red-500"
+    }
+    return "bg-white text-gray-800"
   }
 
   if (loading) {
     return (
-      <div className="p-8">
+      <div className="p-4">
         <div className="flex items-center justify-center h-64">
           <div className="text-center">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-            <p className="text-gray-600">Loading records from Google Sheets...</p>
+            <p className="text-gray-600">
+              Loading records{!isAdmin ? ` for ${userFirmName}` : ' (All)'}...
+            </p>
           </div>
         </div>
       </div>
@@ -156,67 +160,46 @@ export default function ViewRecords(): JSX.Element {
   }
 
   return (
-    <div className="p-8">
-      <div className="bg-gradient-to-r from-blue-600 to-blue-500 text-white p-8 rounded-xl shadow-lg mb-8">
-        <h1 className="text-3xl font-bold mb-2">View Records</h1>
-        <p className="text-blue-100">Production records from Google Sheets Records</p>
-      </div>
-
-      {alert && (
-        <div
-          className={`p-4 rounded-lg mb-6 ${
-            alert.type === "success"
-              ? "bg-green-100 text-green-800 border-l-4 border-green-500"
-              : "bg-red-100 text-red-800 border-l-4 border-red-500"
-          }`}
-        >
-          {alert.message}
+    <div className="p-4">
+      {/* SEPARATE HEADER SECTION */}
+      <div className="bg-gradient-to-r from-blue-600 to-blue-500 text-white p-4 rounded-xl shadow-lg mb-4">
+        <div className="flex justify-between items-start mb-3">
+          <div>
+            <h1 className="text-xl font-bold mb-1">
+              View Records
+            </h1>
+            <p className="text-blue-100 text-xs">
+              {isAdmin ? 'Production records from all machines' : 'Production records for your machines'}
+            </p>
+          </div>
         </div>
-      )}
 
-      <div className="bg-white rounded-xl shadow-md p-6 mb-6">
-        <div className="flex flex-wrap gap-4 items-end">
-          <div className="flex-1 min-w-[250px]">
-            <label className="block text-sm font-semibold text-gray-700 mb-2">Search</label>
+        {/* Compact Filters */}
+        <div className="flex flex-wrap gap-2 items-end mb-2">
+          <div className="flex-1 min-w-[50px]">
+            <label className="block text-xs font-medium text-blue-100 mb-1">Search</label>
             <input
               type="text"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Search by machine, material, specifications..."
-              className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
+              placeholder="Search machines, materials..."
+              className="w-60 px-2 py-1 bg-white text-gray-800 placeholder-gray-500 border border-gray-300 rounded text-xs focus:outline-none focus:border-blue-500"
             />
           </div>
 
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">Start Date</label>
+          <div className="min-w-[100px]">
+            <label className="block text-xs font-medium text-blue-100 mb-1">Date</label>
             <input
               type="date"
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-              className="px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
+              value={filterDate}
+              onChange={(e) => setFilterDate(e.target.value)}
+              className="px-2 py-1 bg-white text-gray-800 border border-gray-300 rounded text-xs focus:outline-none focus:border-blue-500"
             />
           </div>
-
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">End Date</label>
-            <input
-              type="date"
-              value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
-              className="px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
-            />
-          </div>
-
-          <button
-            onClick={filterRecords}
-            className="px-6 py-2 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition-colors"
-          >
-            Search
-          </button>
 
           <button
             onClick={clearFilters}
-            className="px-6 py-2 bg-gray-200 text-gray-700 font-semibold rounded-lg hover:bg-gray-300 transition-colors"
+            className="px-3 py-1 bg-gray-200 text-gray-700 text-xs rounded hover:bg-gray-300 transition-colors"
           >
             Clear
           </button>
@@ -224,72 +207,99 @@ export default function ViewRecords(): JSX.Element {
           <button
             onClick={loadRecords}
             disabled={loading}
-            className="px-6 py-2 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700 transition-colors disabled:bg-gray-400"
+            className="px-3 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700 transition-colors disabled:opacity-50"
           >
-            {loading ? "Refreshing..." : "Refresh"}
+            {loading ? "..." : "Refresh"}
           </button>
         </div>
 
-        <div className="mt-4 text-sm text-gray-600">
-          <span>📊 Total Records: {records.length} | Filtered: {filteredRecords.length}</span>
-        </div>
+        
+
+        {/* Alert */}
+        {alert && (
+          <div
+            className={`mt-2 p-2 rounded text-xs ${
+              alert.type === "success"
+                ? "bg-green-500 bg-opacity-20 text-green-100 border border-green-400"
+                : "bg-red-500 bg-opacity-20 text-red-100 border border-red-400"
+            }`}
+          >
+            {alert.message}
+          </div>
+        )}
       </div>
 
-      <div className="bg-white rounded-xl shadow-md overflow-hidden">
+      {/* SEPARATE TABLE SECTION */}
+      <div className="bg-white rounded-xl shadow-lg overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-blue-900 text-white">
-              <tr>
-                <th className="px-4 py-3 text-left text-sm font-semibold">S.No</th>
-                 <th className="px-4 py-3 text-left text-sm font-semibold">Date</th>
-                <th className="px-4 py-3 text-left text-sm font-semibold">Machine</th>
-                <th className="px-4 py-3 text-left text-sm font-semibold">Working Time (Opt/Act/%)</th>
-                <th className="px-4 py-3 text-left text-sm font-semibold">Output (Opt/Act/%)</th>
-                <th className="px-4 py-3 text-left text-sm font-semibold">Total Quantity (Opt/Act/%)</th>
-                <th className="px-4 py-3 text-left text-sm font-semibold">Material</th>
-                <th className="px-4 py-3 text-left text-sm font-semibold">Manpower</th>
-                <th className="px-4 py-3 text-left text-sm font-semibold">Specifications</th>
-                <th className="px-4 py-3 text-left text-sm font-semibold">Remarks</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredRecords.length === 0 ? (
+          <div className="max-h-100 overflow-y-auto">
+            <table className="w-full text-xs">
+              <thead className="bg-blue-900 text-white sticky top-0 z-10">
                 <tr>
-                  <td colSpan={10} className="px-4 py-8 text-center text-gray-500">
-                    {records.length === 0 ? "No records found in Google Sheets" : "No records match filter"}
-                  </td>
+                  <th className="px-2 py-2 text-left font-semibold">Date/Time</th>
+                  {/* <th className="px-2 py-2 text-left font-semibold">S. No.</th> */}
+                  <th className="px-2 py-2 text-left font-semibold">Firm Name</th>
+                  <th className="px-2 py-2 text-left font-semibold">Machine Name</th>
+                  <th className="px-2 py-2 text-left font-semibold">Optimum Working Time (Hr/Day)</th>
+                  <th className="px-2 py-2 text-left font-semibold">Optimum Output (Mt/Hr)</th>
+                  <th className="px-2 py-2 text-left font-semibold">Optimum Total Quantity (Mt/Day)</th>
+                  <th className="px-2 py-2 text-left font-semibold">Actual Working Time (Hr/Day)</th>
+                  <th className="px-2 py-2 text-left font-semibold">Actual Output (Mt/Hr)</th>
+                  <th className="px-2 py-2 text-left font-semibold">Actual Total Output (Mt/Day)</th>
+                  <th className="px-2 py-2 text-left font-semibold">Material</th>
+                  <th className="px-2 py-2 text-left font-semibold">Manpower</th>
+                  <th className="px-2 py-2 text-left font-semibold">Specifications</th>
+                  <th className="px-2 py-2 text-left font-semibold">Remarks</th>
                 </tr>
-              ) : (
-                filteredRecords.map((record, index) => (
-                  <tr key={index} className="border-b hover:bg-blue-50">
-                  <td className="px-4 py-3 text-sm">{record.sNo}</td>
-
-                    <td className="px-4 py-3 text-sm">{formatDateToDDMMYY(record.dateTime)}</td>
-                    <td className="px-4 py-3 font-semibold">{record.machineName}</td>
-                    <td className={`px-4 py-3 text-sm ${getPerformanceClass(record.actualWorkingTime, record.optimumWorkingTime)}`}>
-                      <div>Opt: {record.optimumWorkingTime}</div>
-                      <div>Act: {record.actualWorkingTime}</div>
-                      <div>{calculatePercentage(record.actualWorkingTime, record.optimumWorkingTime)}%</div>
+              </thead>
+              <tbody>
+                {filteredRecords.length === 0 ? (
+                  <tr>
+                    <td colSpan={14} className="px-2 py-6 text-center text-gray-500">
+                      {records.length === 0 ? 
+                        `No records found${!isAdmin ? ` for ${userFirmName}` : ''}` : 
+                        "No records match filter criteria"
+                      }
                     </td>
-                    <td className={`px-4 py-3 text-sm ${getPerformanceClass(record.actualOutput, record.optimumOutput)}`}>
-                      <div>Opt: {record.optimumOutput}</div>
-                      <div>Act: {record.actualOutput}</div>
-                      <div>{calculatePercentage(record.actualOutput, record.optimumOutput)}%</div>
-                    </td>
-                    <td className={`px-4 py-3 text-sm ${getPerformanceClass(record.actualTotalOutput, record.optimumTotalQuantity)}`}>
-                      <div>Opt: {record.optimumTotalQuantity}</div>
-                      <div>Act: {record.actualTotalOutput}</div>
-                      <div>{calculatePercentage(record.actualTotalOutput, record.optimumTotalQuantity)}%</div>
-                    </td>
-                    <td className="px-4 py-3 text-sm">{record.material}</td>
-                    <td className="px-4 py-3 text-sm">{record.manpower}</td>
-                    <td className="px-4 py-3 text-sm">{record.specifications}</td>
-                    <td className="px-4 py-3 text-sm">{record.remarks}</td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+                ) : (
+                  filteredRecords.map((record, index) => (
+                    <tr key={index} className="border-b hover:bg-blue-50">
+                      <td className="px-2 py-2">{formatDateToDDMMYY(record.dateTime)}</td>
+                      {/* <td className="px-2 py-2">{record.sNo}</td> */}
+                     <td className="px-2 py-2 text-blue-600 font-medium">{record.firmName}</td>
+                      <td className="px-2 py-2 font-medium">{record.machineName}</td>
+                      <td className="px-2 py-2">{record.optimumWorkingTime}</td>
+                      <td className="px-2 py-2">{record.optimumOutput}</td>
+                      <td className="px-2 py-2">{record.optimumTotalQuantity}</td>
+                      <td className={`px-2 py-2 ${getWorkingTimePerformanceClass(record.actualWorkingTime, record.optimumWorkingTime)}`}>
+                        {record.actualWorkingTime}
+                      </td>
+                      <td className="px-2 py-2">{record.actualOutput}</td>
+                      <td className="px-2 py-2">{record.actualTotalOutput}</td>
+                      <td className="px-2 py-2">{record.material || '-'}</td>
+                      <td className="px-2 py-2">{record.manpower || '-'}</td>
+                      <td className="px-2 py-2">{record.specifications || '-'}</td>
+                      <td className="px-2 py-2">{record.remarks || '-'}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Footer Legend */}
+        <div className="bg-gray-50 px-3 py-1 border-t text-xs">
+          <span className="font-medium text-gray-700">Legend:</span>
+          <span className="inline-flex items-center ml-2 mr-2">
+            <span className="w-3 h-3 bg-red-100 border-l-2 border-red-500 rounded mr-1"></span>
+            Working Time: Overtime
+          </span>
+          <span className="inline-flex items-center">
+            <span className="w-3 h-3 bg-white border border-gray-300 rounded mr-1"></span>
+            Normal
+          </span>
         </div>
       </div>
     </div>

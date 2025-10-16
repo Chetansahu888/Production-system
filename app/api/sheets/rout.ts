@@ -4,9 +4,12 @@ const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzNtDzl7Epk4_R7Vnkln
 
 export async function GET(request: NextRequest) {
   try {
-    console.log('🔄 API Route: Fetching records data from Google Sheets...')
+    const { searchParams } = new URL(request.url)
+    const action = searchParams.get('action') || 'getMasterData'
     
-    const response = await fetch(`${SCRIPT_URL}?action=getRecords&timestamp=${Date.now()}`, {
+    console.log(`🔄 Fetching ${action} data from Google Sheets...`)
+    
+    const response = await fetch(`${SCRIPT_URL}?action=${action}&timestamp=${Date.now()}`, {
       method: 'GET',
       headers: {
         'Accept': 'application/json',
@@ -14,7 +17,7 @@ export async function GET(request: NextRequest) {
       }
     })
 
-    console.log('📡 Google Sheets Records GET response status:', response.status)
+    console.log(`📡 Google Sheets ${action} response status:`, response.status)
 
     if (!response.ok) {
       throw new Error(`Google Sheets API error: ${response.status} ${response.statusText}`)
@@ -26,27 +29,24 @@ export async function GET(request: NextRequest) {
     if (contentType && contentType.includes('application/json')) {
       data = await response.json()
     } else {
+      // Sometimes Google Apps Script returns text/html, try to parse as JSON anyway
       const textData = await response.text()
-      console.log('📄 Raw Records response (first 200 chars):', textData.substring(0, 200))
+      console.log('📄 Raw response (first 200 chars):', textData.substring(0, 200))
       
       try {
         data = JSON.parse(textData)
       } catch (parseError) {
-        console.error('❌ Failed to parse Records response as JSON:', parseError)
+        console.error('❌ Failed to parse response as JSON:', parseError)
         throw new Error('Invalid JSON response from Google Apps Script')
       }
     }
     
-    console.log('✅ Records data fetched successfully:', {
+    console.log('✅ Data fetched successfully:', {
+      action,
       success: data.success,
       recordCount: data.data?.length || 0,
       hasError: !!data.error
     })
-
-    // Log first record for debugging
-    if (data.data && data.data.length > 0) {
-      console.log('📋 Sample Records record:', JSON.stringify(data.data[0], null, 2))
-    }
     
     return NextResponse.json(data, {
       status: 200,
@@ -56,12 +56,12 @@ export async function GET(request: NextRequest) {
     })
     
   } catch (error) {
-    console.error('❌ Error in /api/sheets/records (GET):', error)
+    console.error(`❌ Error in /api/sheets (GET ${request.nextUrl.searchParams.get('action')}):`, error)
     return NextResponse.json({ 
       success: false, 
-      error: error instanceof Error ? error.message : 'Failed to fetch records data'
+      error: error instanceof Error ? error.message : 'Failed to fetch data from Google Sheets'
     }, { 
-      status: 500 
+      status: 500
     })
   }
 }
@@ -69,8 +69,9 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
+    const action = body.action || 'saveRecords'
     
-    console.log('🔄 API Route: Posting records data to Google Sheets...')
+    console.log(`🔄 Posting ${action} data to Google Sheets...`)
     console.log('📤 Request body:', JSON.stringify(body, null, 2))
 
     const response = await fetch(SCRIPT_URL, {
@@ -82,7 +83,7 @@ export async function POST(request: NextRequest) {
       body: JSON.stringify(body)
     })
 
-    console.log('📡 Google Sheets POST response status:', response.status)
+    console.log(`📡 Google Sheets ${action} POST response status:`, response.status)
 
     if (!response.ok) {
       throw new Error(`Google Sheets API error: ${response.status} ${response.statusText}`)
@@ -100,12 +101,15 @@ export async function POST(request: NextRequest) {
       try {
         data = JSON.parse(textData)
       } catch (parseError) {
-        console.log('⚠️ Could not parse response as JSON, assuming success')
+        console.error('❌ Failed to parse POST response as JSON:', parseError)
+        // For POST requests to Google Apps Script, sometimes we get HTML even on success
+        // If the request went through, assume success
         data = { success: true, message: 'Data submitted successfully' }
       }
     }
     
-    console.log('✅ API Route: Records POST operation completed:', {
+    console.log('✅ POST operation completed:', {
+      action,
       success: data.success,
       message: data.message || 'No message'
     })
@@ -118,10 +122,10 @@ export async function POST(request: NextRequest) {
     })
 
   } catch (error) {
-    console.error('❌ API Route Error (POST records):', error)
+    console.error('❌ Error in /api/sheets (POST):', error)
     return NextResponse.json({ 
       success: false, 
-      error: error instanceof Error ? error.message : 'Failed to submit records'
+      error: error instanceof Error ? error.message : 'Failed to submit data to Google Sheets'
     }, { 
       status: 500
     })

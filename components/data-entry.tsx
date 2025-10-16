@@ -15,16 +15,14 @@ interface MachineData {
   manpower: number
   specifications: string
   remarks: string
+  firmName: string
 }
 
-interface MasterData {
-  machineName: string
-  specifications: string
-  material: string
-  remarks?: string
+interface DataEntryProps {
+  userFirmName: string
 }
 
-export default function DataEntry() {
+export default function DataEntry({ userFirmName }: DataEntryProps) {
   const [updateDate, setUpdateDate] = useState(new Date().toISOString().split("T")[0])
   const [machines, setMachines] = useState<MachineData[]>([])
   const [availableSpecifications, setAvailableSpecifications] = useState<string[]>([])
@@ -33,16 +31,14 @@ export default function DataEntry() {
   const [loading, setLoading] = useState(false)
   const [submittingRows, setSubmittingRows] = useState<Set<number>>(new Set())
 
-  const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzNtDzl7Epk4_R7Vnklnry2Muwd5gTb-EXV60g-sEchodL8BIQMOwz4P_nK0wPCr5wt/exec"
-
-  // Fetch master data from your API route
+  // Fetch data from Main sheet via API route and filter by firm name
   const fetchMasterData = async () => {
     try {
       setLoading(true)
-      console.log('🔄 Fetching master data from API...')
+      console.log('🔄 Fetching data from Main sheet for firm:', userFirmName)
       
-      // Use your API route to fetch master data
-      const response = await fetch('/api/sheets/master', {
+      // Fetch Main sheet data through your API route
+      const mainResponse = await fetch('/api/sheets/main', {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -50,51 +46,38 @@ export default function DataEntry() {
         cache: 'no-store'
       })
 
-      console.log('📡 API Response status:', response.status)
+      console.log('📡 Main API response status:', mainResponse.status)
 
-      if (!response.ok) {
-        throw new Error(`API error: ${response.status}`)
+      if (!mainResponse.ok) {
+        throw new Error(`Main API error: ${mainResponse.status}`)
       }
 
-      const result = await response.json()
-      console.log('📊 API Response data:', result)
+      const mainResult = await mainResponse.json()
+      console.log('📊 Main Sheet Response:', mainResult)
 
-      if (result.success && result.data) {
-        const masterData = result.data
+      if (mainResult.success && mainResult.data && Array.isArray(mainResult.data)) {
+        let mainData = mainResult.data
         
-        // Extract unique specifications and materials
-        const specs = [...new Set(masterData.map((item: MasterData) => item.specifications).filter(Boolean))]
-        const materials = [...new Set(masterData.map((item: MasterData) => item.material).filter(Boolean))]
-        
-      
-        // Set optimum values based on machine types
-        const optimumValues = {
-          'Grinding': { workingTime: 20, output: 0.5, totalQuantity: 10 },
-          'Mixing Mill 1': { workingTime: 15, output: 3, totalQuantity: 45 },
-          'Mixing Mill 2': { workingTime: 15, output: 3, totalQuantity: 45 },
-          'Mixing Mill 3': { workingTime: 15, output: 5, totalQuantity: 75 },
-          'Impact Mill': { workingTime: 5, output: 15, totalQuantity: 75 },
-          'Impact Mill23': { workingTime: 5, output: 15, totalQuantity: 75 }
+        // Filter data by user's firm name (only if not "All")
+        if (userFirmName && userFirmName !== 'All') {
+          mainData = mainData.filter((item: any) => 
+            item.firmName === userFirmName
+          )
+          console.log(`🔍 Filtered ${mainData.length} machines for firm: ${userFirmName}`)
         }
         
-        // Create unique machines (remove duplicates)
-        const uniqueMachines = masterData.reduce((acc: MasterData[], current: MasterData) => {
-          const exists = acc.find(item => item.machineName === current.machineName)
-          if (!exists) {
-            acc.push(current)
-          }
-          return acc
-        }, [])
-        
-        const initialMachines = uniqueMachines.map((item: MasterData, index: number) => {
-          const optimum = optimumValues[item.machineName as keyof typeof optimumValues] || { workingTime: 8, output: 1, totalQuantity: 8 }
-          
+        if (mainData.length === 0) {
+          throw new Error(`No machines found for firm: ${userFirmName}`)
+        }
+
+        // Create machines from filtered Main sheet data
+        const initialMachines = mainData.map((item: any, index: number) => {
           return {
-            sNo: index + 1,
-            machineName: item.machineName,
-            optimumWorkingTime: optimum.workingTime,
-            optimumOutput: optimum.output,
-            optimumTotalQuantity: optimum.totalQuantity,
+            sNo: item.sNo || (index + 1),
+            machineName: item.machineName || 'Unknown Machine',
+            optimumWorkingTime: parseFloat(item.optimumWorkingTime) || 0,
+            optimumOutput: parseFloat(item.optimumOutput) || 0,
+            optimumTotalQuantity: parseFloat(item.optimumTotalQuantity) || 0,
             actualWorkingTime: 0,
             actualOutput: 0,
             actualTotalOutput: 0,
@@ -102,31 +85,65 @@ export default function DataEntry() {
             manpower: 0,
             specifications: "",
             remarks: "",
+            firmName: item.firmName || 'No Firm',
           }
         })
         
         setMachines(initialMachines)
         setAlert({ 
           type: "success", 
-          message: `✅ Successfully loaded ${uniqueMachines.length} machines from Master sheet!` 
+          message: `✅ Successfully loaded ${initialMachines.length} machines for ${userFirmName}!` 
         })
         setTimeout(() => setAlert(null), 3000)
         
       } else {
-        throw new Error(result.error || 'Failed to fetch master data')
+        throw new Error(mainResult.error || 'Failed to fetch main data or no data returned')
+      }
+
+      // Fetch Master data for specifications and materials (no filtering needed)
+      try {
+        const masterResponse = await fetch('/api/sheets/master', {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          cache: 'no-store'
+        })
+
+        if (masterResponse.ok) {
+          const masterResult = await masterResponse.json()
+          console.log('📊 Master Sheet Response:', masterResult)
+          
+          if (masterResult.success && masterResult.data) {
+            const specs = [...new Set(masterResult.data.map((item: any) => item.specifications).filter(Boolean))]
+            const materials = [...new Set(masterResult.data.map((item: any) => item.material).filter(Boolean))]
+            setAvailableSpecifications(specs)
+            setAvailableMaterials(materials)
+          } else {
+            setAvailableSpecifications(['Labour issue', 'Machine work/maintenance', 'Electricity issue', 'Raw material issue', 'Space - Not available'])
+            setAvailableMaterials(['P14', 'Sand', 'Steel', 'Aluminum', 'Copper'])
+          }
+        } else {
+          setAvailableSpecifications(['Labour issue', 'Machine work/maintenance', 'Electricity issue', 'Raw material issue', 'Space - Not available'])
+          setAvailableMaterials(['P14', 'Sand', 'Steel', 'Aluminum', 'Copper'])
+        }
+      } catch (masterError) {
+        console.log('⚠️ Master data fetch failed, using fallback:', masterError)
+        setAvailableSpecifications(['Labour issue', 'Machine work/maintenance', 'Electricity issue', 'Raw material issue', 'Space - Not available'])
+        setAvailableMaterials(['P14', 'Sand', 'Steel', 'Aluminum', 'Copper'])
       }
       
     } catch (error) {
-      console.error('❌ Error loading master data:', error)
+      console.error('❌ Error loading data:', error)
       setAlert({ 
         type: "error", 
-        message: `❌ Failed to load master data: ${error instanceof Error ? error.message : 'Unknown error'}` 
+        message: `❌ Failed to load data: ${error instanceof Error ? error.message : 'Unknown error'}` 
       })
       setTimeout(() => setAlert(null), 5000)
       
-      // Set minimal fallback data to keep the app working
+      // Set fallback data
       setAvailableSpecifications(['Labour issue', 'Machine work/maintenance', 'Electricity issue', 'Raw material issue'])
-      setAvailableMaterials(['P14', 'Sand', 'Steel', 'Aluminum', 'Copper','test1'])
+      setAvailableMaterials(['P14', 'Sand', 'Steel', 'Aluminum', 'Copper'])
       setMachines([])
     } finally {
       setLoading(false)
@@ -134,8 +151,10 @@ export default function DataEntry() {
   }
 
   useEffect(() => {
-    fetchMasterData()
-  }, [])
+    if (userFirmName) {
+      fetchMasterData()
+    }
+  }, [userFirmName])
 
   const updateMachine = (index: number, field: string, value: any) => {
     const updated = [...machines]
@@ -172,38 +191,47 @@ export default function DataEntry() {
           manpower: machine.manpower,
           specifications: machine.specifications,
           remarks: machine.remarks,
+          firmName: machine.firmName,
         }]
       }
 
-      // Submit to Google Sheets
-      await fetch(SCRIPT_URL, {
+      // Submit to Google Sheets through API route
+      const response = await fetch('/api/sheets/records', {
         method: 'POST',
-        mode: 'no-cors',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(recordData)
       })
-      
-      setAlert({ type: "success", message: `✅ Record for ${machine.machineName} submitted successfully!` })
-      setTimeout(() => setAlert(null), 3000)
 
-      // Reset the row's actual values
-      const updated = [...machines]
-      updated[index] = {
-        ...updated[index],
-        actualWorkingTime: 0,
-        actualOutput: 0,
-        actualTotalOutput: 0,
-        material: "",
-        manpower: 0,
-        specifications: "",
-        remarks: "",
+      console.log('📤 Submit response status:', response.status)
+
+      if (response.ok) {
+        const result = await response.json()
+        console.log('✅ Submit result:', result)
+        
+        setAlert({ type: "success", message: `✅ Record for ${machine.machineName} (${machine.firmName}) submitted successfully!` })
+        setTimeout(() => setAlert(null), 3000)
+
+        // Reset the row's actual values
+        const updated = [...machines]
+        updated[index] = {
+          ...updated[index],
+          actualWorkingTime: 0,
+          actualOutput: 0,
+          actualTotalOutput: 0,
+          material: "",
+          manpower: 0,
+          specifications: "",
+          remarks: "",
+        }
+        setMachines(updated)
+      } else {
+        throw new Error(`Submit failed with status: ${response.status}`)
       }
-      setMachines(updated)
       
     } catch (error) {
-      console.error('Error saving record:', error)
+      console.error('❌ Error saving record:', error)
       setAlert({ type: "error", message: `❌ Error submitting record for ${machines[index].machineName}` })
       setTimeout(() => setAlert(null), 5000)
     } finally {
@@ -215,85 +243,13 @@ export default function DataEntry() {
     }
   }
 
-  const saveAllRecords = async () => {
-    try {
-      setLoading(true)
-
-      // Check if there's any actual data to save
-      const hasData = machines.some(machine => 
-        machine.actualWorkingTime > 0 || 
-        machine.actualOutput > 0 || 
-        machine.actualTotalOutput > 0 ||
-        machine.material || 
-        machine.specifications || 
-        machine.remarks
-      )
-
-      if (!hasData) {
-        setAlert({ type: "error", message: "Please fill in some actual data before saving" })
-        setTimeout(() => setAlert(null), 3000)
-        return
-      }
-
-      const recordsData = {
-        action: 'saveRecords',
-        data: machines.map((machine) => ({
-          dateTime: updateDate,
-          sNo: machine.sNo,
-          machineName: machine.machineName,
-          optimumWorkingTime: machine.optimumWorkingTime,
-          optimumOutput: machine.optimumOutput,
-          optimumTotalQuantity: machine.optimumTotalQuantity,
-          actualWorkingTime: machine.actualWorkingTime,
-          actualOutput: machine.actualOutput,
-          actualTotalOutput: machine.actualTotalOutput,
-          material: machine.material,
-          manpower: machine.manpower,
-          specifications: machine.specifications,
-          remarks: machine.remarks,
-        }))
-      }
-
-      await fetch(SCRIPT_URL, {
-        method: 'POST',
-        mode: 'no-cors',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(recordsData)
-      })
-
-      setAlert({ type: "success", message: "✅ All records submitted successfully!" })
-      setTimeout(() => setAlert(null), 3000)
-
-      // Reset all actual values
-      setMachines(machines.map(m => ({
-        ...m,
-        actualWorkingTime: 0,
-        actualOutput: 0,
-        actualTotalOutput: 0,
-        material: "",
-        manpower: 0,
-        specifications: "",
-        remarks: "",
-      })))
-      
-    } catch (error) {
-      console.error('Error saving all records:', error)
-      setAlert({ type: "error", message: "❌ Error submitting all records" })
-      setTimeout(() => setAlert(null), 5000)
-    } finally {
-      setLoading(false)
-    }
-  }
-
   if (loading && machines.length === 0) {
     return (
       <div className="p-8">
         <div className="flex items-center justify-center h-64">
           <div className="text-center">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-            <p className="text-gray-600">Loading machine data from Master sheet...</p>
+            <p className="text-gray-600">Loading machine data for {userFirmName}...</p>
           </div>
         </div>
       </div>
@@ -303,8 +259,8 @@ export default function DataEntry() {
   return (
     <div className="p-8">
       <div className="bg-gradient-to-r from-blue-600 to-blue-500 text-white p-8 rounded-xl shadow-lg mb-8">
-        <h1 className="text-3xl font-bold mb-2">Data Entry</h1>
-        <p className="text-blue-100">Update production records</p>
+        <h1 className="text-3xl font-bold mb-2">Data Entry - {userFirmName}</h1>
+        <p className="text-blue-100">Update production records for your machines</p>
       </div>
 
       {alert && (
@@ -319,7 +275,7 @@ export default function DataEntry() {
         </div>
       )}
 
-      <div className="bg-white rounded-xl shadow-md p-6 mb-6">
+      {/* <div className="bg-white rounded-xl shadow-md p-6 mb-6">
         <div className="flex items-center gap-4">
           <label className="font-semibold text-gray-700">Update Date:</label>
           <input
@@ -333,13 +289,13 @@ export default function DataEntry() {
             className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
             disabled={loading}
           >
-            {loading ? "Refreshing..." : "Refresh Master Data"}
+            {loading ? "Refreshing..." : "Refresh Data"}
           </button>
           <span className="text-sm text-gray-600">
-            ({machines.length} machines loaded from Master sheet)
+            ({machines.length} machines for {userFirmName})
           </span>
         </div>
-      </div>
+      </div> */}
 
       {machines.length === 0 ? (
         <div className="bg-white rounded-xl shadow-md p-8 text-center">
@@ -347,8 +303,8 @@ export default function DataEntry() {
             <svg className="w-16 h-16 mx-auto mb-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
             </svg>
-            <h3 className="text-lg font-medium text-gray-900 mb-2">No Machines Loaded</h3>
-            <p className="text-gray-500 mb-4">Unable to load machine data from Master sheet.</p>
+            <h3 className="text-lg font-medium text-gray-900 mb-2">No Machines Found</h3>
+            <p className="text-gray-500 mb-4">No machines found for firm: {userFirmName}</p>
             <button
               onClick={fetchMasterData}
               className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
@@ -366,6 +322,7 @@ export default function DataEntry() {
                 <tr>
                   <th className="px-4 py-3 text-left text-sm font-semibold">S.No.</th>
                   <th className="px-4 py-3 text-left text-sm font-semibold">Machine Name</th>
+                  <th className="px-4 py-3 text-left text-sm font-semibold">Firm</th>
                   <th className="px-4 py-3 text-left text-sm font-semibold">Actual Working Time</th>
                   <th className="px-4 py-3 text-left text-sm font-semibold">Actual Output</th>
                   <th className="px-4 py-3 text-left text-sm font-semibold">Actual Total Output</th>
@@ -381,6 +338,7 @@ export default function DataEntry() {
                   <tr key={index} className="border-b hover:bg-blue-50">
                     <td className="px-4 py-3">{machine.sNo}</td>
                     <td className="px-4 py-3 font-semibold text-gray-800">{machine.machineName}</td>
+                    <td className="px-4 py-3 text-sm text-blue-600 font-medium">{machine.firmName}</td>
                     <td className="px-4 py-3">
                       <input
                         type="number"
@@ -416,18 +374,13 @@ export default function DataEntry() {
                       />
                     </td>
                     <td className="px-4 py-3">
-                      <select
+                      <input
+                        type="text"
                         value={machine.material}
                         onChange={(e) => updateMachine(index, "material", e.target.value)}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
-                      >
-                        <option value="">Select Material</option>
-                        {availableMaterials.map((material) => (
-                          <option key={material} value={material}>
-                            {material}
-                          </option>
-                        ))}
-                      </select>
+                        placeholder="Enter material..."
+                      />
                     </td>
                     <td className="px-4 py-3">
                       <input
@@ -488,20 +441,8 @@ export default function DataEntry() {
           </div>
 
           <div className="p-6 bg-gray-50 border-t flex gap-4">
-            {/* <button
-              onClick={saveAllRecords}
-              disabled={loading || machines.length === 0}
-              className={`px-8 py-3 font-semibold rounded-lg shadow-lg transition-all ${
-                loading || machines.length === 0
-                  ? "bg-gray-400 text-white cursor-not-allowed"
-                  : "bg-gradient-to-r from-blue-600 to-blue-500 text-white hover:shadow-xl hover:from-blue-700 hover:to-blue-600"
-              }`}
-            >
-              {loading ? "Saving All..." : "Save All Records"}
-            </button> */}
-            
             <div className="text-sm text-gray-600 flex items-center">
-              <span>📊 {machines.length} machines from Master sheet | ✅ Records save to Google Sheets</span>
+              <span>📊 {machines.length} machines for {userFirmName} | ✅ Records save to Google Sheets</span>
             </div>
           </div>
         </div>
