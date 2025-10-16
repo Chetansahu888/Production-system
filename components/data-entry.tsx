@@ -115,10 +115,22 @@ export default function DataEntry({ userFirmName }: DataEntryProps) {
           console.log('📊 Master Sheet Response:', masterResult)
           
           if (masterResult.success && masterResult.data) {
-            const specs = [...new Set(masterResult.data.map((item: any) => item.specifications).filter(Boolean))]
-            const materials = [...new Set(masterResult.data.map((item: any) => item.material).filter(Boolean))]
-            setAvailableSpecifications(specs)
-            setAvailableMaterials(materials)
+            const specs = Array.from(
+              new Set(
+                masterResult.data
+                  .map((item: any) => item.specifications)
+                  .filter((s: unknown): s is string => typeof s === 'string' && s.trim() !== "")
+              )
+            )
+            const materials = Array.from(
+              new Set(
+                masterResult.data
+                  .map((item: any) => item.material)
+                  .filter((m: unknown): m is string => typeof m === 'string' && m.trim() !== "")
+              )
+            )
+            // setAvailableSpecifications(specs)
+            // setAvailableMaterials(materials)
           } else {
             setAvailableSpecifications(['Labour issue', 'Machine work/maintenance', 'Electricity issue', 'Raw material issue', 'Space - Not available'])
             setAvailableMaterials(['P14', 'Sand', 'Steel', 'Aluminum', 'Copper'])

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import Sidebar from "@/components/sidebar"
 import Dashboard from "@/components/dashboard"
 import DataEntry from "@/components/data-entry"
@@ -36,7 +36,8 @@ export default function Home() {
         const userWithAccess = {
           ...foundUser,
           allowedPages: allowedPages,
-          userFirmName: foundUser.firmname || 'All' // Get user's firm name from column E
+          userFirmName: foundUser.firmname || 'All', // Get user's firm name from column E
+          isAdmin: foundUser.role === 'admin' // Check if user is admin
         }
         
         setUserInfo(userWithAccess)
@@ -76,15 +77,15 @@ export default function Home() {
     localStorage.removeItem('user')
   }
 
-  // Check if already logged in on page load
-  useState(() => {
+  // Check if already logged in on page load - FIX: Use useEffect instead of useState
+  useEffect(() => {
     const savedUser = localStorage.getItem('user')
     if (savedUser) {
       const user = JSON.parse(savedUser)
       setUserInfo(user)
       setIsLoggedIn(true)
     }
-  })
+  }, [])
 
   if (!isLoggedIn) {
     return (
@@ -190,13 +191,22 @@ export default function Home() {
       />
       <main className="flex-1 overflow-auto">
         {userInfo?.allowedPages?.includes('dashboard') && currentPage === "dashboard" && (
-          <Dashboard userFirmName={userInfo.userFirmName} />
+          <Dashboard 
+            userFirmName={userInfo.userFirmName} 
+            isAdmin={userInfo.isAdmin} 
+          />
         )}
         {userInfo?.allowedPages?.includes('data entry') && currentPage === "entry" && (
-          <DataEntry userFirmName={userInfo.userFirmName} />
+          <DataEntry 
+            userFirmName={userInfo.userFirmName}
+            {...({ isAdmin: userInfo.isAdmin } as any)}
+          />
         )}
         {userInfo?.allowedPages?.includes('records') && currentPage === "records" && (
-          <ViewRecords userFirmName={userInfo.userFirmName} />
+          <ViewRecords 
+            userFirmName={userInfo.userFirmName} 
+            isAdmin={userInfo.isAdmin} 
+          />
         )}
         
         {/* Show access denied message if user tries to access unauthorized page */}
