@@ -182,44 +182,64 @@ export default function Home() {
   }
 
   return (
-    <div className="flex h-screen bg-gray-50">
+    <div className="min-h-screen flex bg-gray-50">
+      {/* Sidebar - Fixed height */}
       <Sidebar 
         currentPage={currentPage} 
         onNavigate={setCurrentPage} 
         userInfo={userInfo} 
         onLogout={handleLogout} 
       />
-      <main className="flex-1 overflow-auto">
-        {userInfo?.allowedPages?.includes('dashboard') && currentPage === "dashboard" && (
-          <Dashboard 
-            userFirmName={userInfo.userFirmName} 
-            isAdmin={userInfo.isAdmin} 
-          />
-        )}
-        {userInfo?.allowedPages?.includes('data entry') && currentPage === "entry" && (
-          <DataEntry 
-            userFirmName={userInfo.userFirmName}
-            {...({ isAdmin: userInfo.isAdmin } as any)}
-          />
-        )}
-        {userInfo?.allowedPages?.includes('records') && currentPage === "records" && (
-          <ViewRecords 
-            userFirmName={userInfo.userFirmName} 
-            isAdmin={userInfo.isAdmin} 
-          />
-        )}
-        
-        {/* Show access denied message if user tries to access unauthorized page */}
-        {!userInfo?.allowedPages?.includes(currentPage === 'entry' ? 'data entry' : currentPage) && (
-          <div className="flex items-center justify-center h-full">
-            <div className="text-center">
-              <div className="text-6xl mb-4">🚫</div>
-              <h2 className="text-2xl font-bold text-gray-700 mb-2">Access Denied</h2>
-              <p className="text-gray-500">You don't have permission to access this page.</p>
+      
+      {/* Main content area with footer */}
+      <div className="flex-1 flex flex-col">
+        <main className="flex-1 overflow-auto">
+          {userInfo?.allowedPages?.includes('dashboard') && currentPage === "dashboard" && (
+            <Dashboard 
+              userFirmName={userInfo.userFirmName} 
+              isAdmin={userInfo.isAdmin} 
+            />
+          )}
+          {userInfo?.allowedPages?.includes('data entry') && currentPage === "entry" && (
+            <DataEntry 
+              userFirmName={userInfo.userFirmName}
+              {...({ isAdmin: userInfo.isAdmin } as any)}
+            />
+          )}
+          {userInfo?.allowedPages?.includes('records') && currentPage === "records" && (
+            <ViewRecords 
+              userFirmName={userInfo.userFirmName} 
+              isAdmin={userInfo.isAdmin} 
+            />
+          )}
+          
+          {/* Show access denied message if user tries to access unauthorized page */}
+          {!userInfo?.allowedPages?.includes(currentPage === 'entry' ? 'data entry' : currentPage) && (
+            <div className="flex items-center justify-center h-full">
+              <div className="text-center">
+                <div className="text-6xl mb-4">🚫</div>
+                <h2 className="text-2xl font-bold text-gray-700 mb-2">Access Denied</h2>
+                <p className="text-gray-500">You don't have permission to access this page.</p>
+              </div>
             </div>
+          )}
+        </main>
+        
+        {/* Footer - Only in main content area, not full width */}
+        <footer className="bg-white border-t border-gray-200 py-3">
+          <div className="text-center text-sm text-gray-600">
+            Powered by{' '}
+            <a 
+              href="https://www.botivate.in/" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="text-blue-600 font-semibold hover:text-blue-800 hover:underline transition-colors duration-200"
+            >
+              Bootivate
+            </a>
           </div>
-        )}
-      </main>
+        </footer>
+      </div>
     </div>
   )
 }

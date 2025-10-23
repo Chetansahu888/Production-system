@@ -453,9 +453,9 @@ export default function DataEntry({ userFirmName }: DataEntryProps) {
           </div>
 
           <div className="p-6 bg-gray-50 border-t flex gap-4">
-            <div className="text-sm text-gray-600 flex items-center">
+            {/* <div className="text-sm text-gray-600 flex items-center">
               <span>📊 {machines.length} machines for {userFirmName} | ✅ Records save to Google Sheets</span>
-            </div>
+            </div> */}
           </div>
         </div>
       )}

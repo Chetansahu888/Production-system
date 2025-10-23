@@ -30,7 +30,7 @@ export default function Sidebar({ currentPage, onNavigate, userInfo, onLogout }:
     <div className="w-64 bg-gradient-to-b from-blue-900 to-blue-800 text-white flex flex-col shadow-xl">
       <div className="p-6 border-b border-blue-700">
         <h1 className="text-xl font-bold mb-1">Machine Efficiency FMS System</h1>
-        <p className="text-sm text-blue-200">Data Management Portal</p>
+        {/* <p className="text-sm text-blue-200">Data Management Portal</p> */}
         {userInfo && (
           <div className="mt-3 text-xs text-blue-200">
             <p>Welcome, {userInfo.username}</p>
@@ -74,7 +74,8 @@ export default function Sidebar({ currentPage, onNavigate, userInfo, onLogout }:
             Logout
           </button>
         )}
-        <div className="text-xs text-blue-300 text-center">Production Management v2.0</div>
+       
+       
       </div>
     </div>
   )

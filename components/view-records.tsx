@@ -289,7 +289,7 @@ export default function ViewRecords({ userFirmName, isAdmin }: ViewRecordsProps)
           </div>
         </div>
 
-        {/* Footer Legend */}
+        {/* Footer Legend
         <div className="bg-gray-50 px-3 py-1 border-t text-xs">
           <span className="font-medium text-gray-700">Legend:</span>
           <span className="inline-flex items-center ml-2 mr-2">
@@ -300,7 +300,7 @@ export default function ViewRecords({ userFirmName, isAdmin }: ViewRecordsProps)
             <span className="w-3 h-3 bg-white border border-gray-300 rounded mr-1"></span>
             Normal
           </span>
-        </div>
+        </div> */}
       </div>
     </div>
   )
